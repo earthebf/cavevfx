@@ -1,1 +1,34 @@
-
+name: build
+on: [workflow_dispatch, push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Projekt entpacken
+        run: unzip -q hugosmp-fabric-1.21.11-src.zip
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: current
+      - name: Passende Versionen automatisch holen
+        working-directory: hugosmp
+        run: |
+          MC=1.21.11
+          YARN=$(curl -s https://meta.fabricmc.net/v2/versions/yarn/$MC | jq -r '.[0].version')
+          LOADER=$(curl -s https://meta.fabricmc.net/v2/versions/loader | jq -r '[.[]|select(.stable==true)][0].version')
+          API=$(curl -s -G "https://api.modrinth.com/v2/project/fabric-api/version" --data-urlencode 'game_versions=["1.21.11"]' --data-urlencode 'loaders=["fabric"]' | jq -r '.[0].version_number')
+          LOOM=$(curl -s https://maven.fabricmc.net/net/fabricmc/fabric-loom/maven-metadata.xml | grep -oP '(?<=<release>)[^<]+')
+          echo "yarn=$YARN loader=$LOADER api=$API loom=$LOOM"
+          sed -i "s|^yarn_mappings=.*|yarn_mappings=$YARN|; s|^loader_version=.*|loader_version=$LOADER|; s|^fabric_version=.*|fabric_version=$API|" gradle.properties
+          sed -i "s|id 'fabric-loom' version '[^']*'|id 'fabric-loom' version '$LOOM'|" build.gradle
+      - name: Mod bauen
+        working-directory: hugosmp
+        run: gradle build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cavevfx-mod
+          path: hugosmp/build/libs/*.jar
